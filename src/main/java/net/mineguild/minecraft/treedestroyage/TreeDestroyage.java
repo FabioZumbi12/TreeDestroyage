@@ -14,6 +14,7 @@ import com.google.common.reflect.TypeToken;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
 import net.mineguild.minecraft.treedestroyage.commands.SetConfigCommand;
+import net.mineguild.minecraft.treedestroyage.database.BlockLogger;
 import net.mineguild.minecraft.treedestroyage.event.BlockPlaceHandler;
 import net.mineguild.minecraft.treedestroyage.event.BreakBlockHandler;
 import net.mineguild.minecraft.treedestroyage.event.SaplingProtectionHandler;
@@ -27,6 +28,7 @@ import org.spongepowered.api.Sponge;
 import org.spongepowered.api.command.CommandResult;
 import org.spongepowered.api.command.spec.CommandSpec;
 import org.spongepowered.api.config.ConfigDir;
+import org.spongepowered.api.config.ConfigRoot;
 import org.spongepowered.api.config.DefaultConfig;
 import org.spongepowered.api.event.Listener;
 import org.spongepowered.api.event.game.GameReloadEvent;
@@ -74,7 +76,9 @@ public class TreeDestroyage {
   @Inject
   @ConfigDir(sharedRoot = false)
   private Path configDir;
-  public File configDir(){
+  private BlockLogger blockLogger;
+
+  public File configDir() {
     return this.configDir.toFile();
   }
 
@@ -83,7 +87,8 @@ public class TreeDestroyage {
   private SaplingProtectionHandler saplingHandler;
 
   private BlockPlaceHandler blockPlaceHandler;
-  public BlockPlaceHandler getBlockPlaceHandler(){
+
+  public BlockPlaceHandler getBlockPlaceHandler() {
     return this.blockPlaceHandler;
   }
 
@@ -101,7 +106,6 @@ public class TreeDestroyage {
 
     loadConfig();
 
-
     registerCommands();
   }
 
@@ -109,8 +113,10 @@ public class TreeDestroyage {
   public void onServerStart(GameStartingServerEvent event) {
     saplingHandler.activate();
 
-    //need to wait load worlds
-    if (config.getNode("logPlayerBlocks").getBoolean(true)){
+    // need to wait for worlds loaded
+    if (config.getNode("logPlayerBlocks").getBoolean(true)) {
+      blockLogger = new BlockLogger(this);
+      game.getEventManager().registerListeners(this, blockLogger);
       blockPlaceHandler = new BlockPlaceHandler(this);
       game.getEventManager().registerListeners(this, blockPlaceHandler);
     }
@@ -120,9 +126,6 @@ public class TreeDestroyage {
   public void onGameStopping(GameStoppingEvent event) {
     try {
       configManager.save(config);
-      if (blockPlaceHandler != null){
-        blockPlaceHandler.Stop();
-      }
     } catch (IOException e) {
       getLogger().error("Unable to save config!", e);
     }
@@ -140,10 +143,10 @@ public class TreeDestroyage {
 
   private void reload() throws IOException {
     config = configManager.load();
-    if (!config.getNode("logPlayerBlocks").getBoolean(true) && blockPlaceHandler != null){
-      blockPlaceHandler.Stop();
+    if (!config.getNode("logPlayerBlocks").getBoolean(true) && blockPlaceHandler != null) {
       game.getEventManager().unregisterListeners(blockPlaceHandler);
       blockPlaceHandler = null;
+      blockLogger = null;
     }
   }
 
@@ -198,8 +201,25 @@ public class TreeDestroyage {
         if (!defaultConfig.createNewFile()) {
           getLogger().error("Couldn't create new config file! Check R/W access!");
         }
-        config = configManager.load();
-        config.getNode("version").setValue(1);
+        ConfigRoot c = game.getConfigManager().getSharedConfig(this);
+        if (c.getConfigPath().toFile().exists()) {
+          getLogger().info("Old config file present. Migrating into new directory.");
+          try {
+            config = c.getConfig().load();
+            getLogger().info("Successfully migrated!");
+            if (!c.getConfigPath().toFile().delete()) {
+              getLogger().error(
+                  "Couldn't remove old file! Please use the treedestroyage/treedestroyage.conf file!");
+            }
+          } catch (IOException e) {
+            getLogger().error("Unable to load config!", e);
+            config = configManager.load();
+            config.getNode("version").setValue(1);
+          }
+        } else {
+          config = configManager.load();
+          config.getNode("version").setValue(1);
+        }
         configManager.save(config);
       }
       config = configManager.load();
@@ -229,6 +249,7 @@ public class TreeDestroyage {
   }
 
   private boolean configMigration(CommentedConfigurationNode config, boolean quiet) {
+
     ConfigurationNode versionNode = config.getNode("version");
     switch (versionNode.getInt()) {
       case 1:
@@ -270,9 +291,10 @@ public class TreeDestroyage {
         break;
       case 7:
         config.getNode("logPlayerBlocks")
-                .setComment("Log placed blocks by player to prevent destroy players buildings.").setValue(true);
+            .setComment("Log placed blocks by player to prevent destroy players buildings.")
+            .setValue(true);
         config.getNode("purgeBlocksTime")
-                .setComment("Remove blocks from database after x days. (-1 to disable)").setValue(-1);
+            .setComment("Remove blocks from database after x days. (-1 to disable)").setValue(-1);
         break;
       default:
         return false;
@@ -312,4 +334,9 @@ public class TreeDestroyage {
   public ConfigurationLoader<CommentedConfigurationNode> getConfigManager() {
     return configManager;
   }
+
+  public BlockLogger getBlockLogger() {
+    return blockLogger;
+  }
+
 }

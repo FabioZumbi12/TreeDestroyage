@@ -12,7 +12,6 @@ import org.spongepowered.api.Game;
 import org.spongepowered.api.Sponge;
 import org.spongepowered.api.block.BlockSnapshot;
 import org.spongepowered.api.block.BlockState;
-import org.spongepowered.api.block.BlockType;
 import org.spongepowered.api.block.BlockTypes;
 import org.spongepowered.api.data.Transaction;
 import org.spongepowered.api.data.key.Keys;
@@ -27,9 +26,7 @@ import org.spongepowered.api.event.Listener;
 import org.spongepowered.api.event.SpongeEventFactory;
 import org.spongepowered.api.event.block.ChangeBlockEvent;
 import org.spongepowered.api.event.filter.cause.First;
-import org.spongepowered.api.item.ItemTypes;
 import org.spongepowered.api.item.inventory.ItemStack;
-import org.spongepowered.api.item.inventory.ItemStackSnapshot;
 import org.spongepowered.api.world.BlockChangeFlags;
 import org.spongepowered.api.world.Location;
 import org.spongepowered.api.world.World;
@@ -38,7 +35,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 public class BreakBlockHandler {
 
@@ -63,16 +59,26 @@ public class BreakBlockHandler {
         .isWood(transaction.getDefault().getLocation().get().sub(Vector3d.UP).createSnapshot());
 
     if (getConfig().getNode("baseOnly").getBoolean()) {
-        if (!isBase) {
-            return;
-        }
+      if (!isBase) {
+        return;
+      }
     }
 
-    if (plugin.getBlockPlaceHandler().placedBlocks.containsKey(breakEvent.getTransactions().get(0).getOriginal().getLocation().get())){
-      plugin.getBlockPlaceHandler().placedBlocks.remove(breakEvent.getTransactions().get(0).getOriginal().getLocation().get());
-      plugin.getBlockPlaceHandler().SetSave();
-      return;
+    if (plugin.getBlockLogger().isEnabled()) {
+      if (transaction.getDefault().getLocation().isPresent() && plugin.getBlockLogger()
+          .isPlayerPlaced(transaction.getDefault().getLocation().get())) {
+        plugin.getBlockLogger().removeBlock(transaction.getDefault().getLocation().get());
+        return;
+      }
     }
+
+    /*if (plugin.getBlockPlaceHandler().placedBlocks
+        .containsKey(breakEvent.getTransactions().get(0).getOriginal().getLocation().get())) {
+      plugin.getBlockPlaceHandler().placedBlocks
+          .remove(breakEvent.getTransactions().get(0).getOriginal().getLocation().get());
+      plugin.getBlockPlaceHandler().setSave();
+      return;
+    }*/
 
     if (!firedEvents.contains(breakEvent) && getConfig().getNode("enabled").getBoolean(true)
         && !breakEvent.isCancelled() &&
@@ -93,7 +99,8 @@ public class BreakBlockHandler {
             return;
           }
         }
-        TreeDetector dec = new TreeDetector(plugin, breakEvent.getTransactions().get(0).getOriginal(),
+        TreeDetector dec = new TreeDetector(plugin,
+            breakEvent.getTransactions().get(0).getOriginal(),
             maxAmount, getConfig());
         Vector3d playerPos = player.getLocation().getPosition();
         List<Transaction<BlockSnapshot>> transactions = new ArrayList<>(
@@ -208,8 +215,9 @@ public class BreakBlockHandler {
 
   private Location<World> findBase(Location<World> startLocation) {
     int limit = 0;
-    while (limit <= getConfig().getNode("maxBlocks").getInt(200) && !(startLocation.getBlockType() == BlockTypes.DIRT
-        || startLocation.getBlockType() == BlockTypes.GRASS)) {
+    while (limit <= getConfig().getNode("maxBlocks").getInt(200) && !(
+        startLocation.getBlockType() == BlockTypes.DIRT
+            || startLocation.getBlockType() == BlockTypes.GRASS)) {
       startLocation = startLocation.sub(Vector3d.UP);
       limit++;
     }
